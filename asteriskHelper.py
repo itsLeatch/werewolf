@@ -127,7 +127,7 @@ async def playHoldMusicForWaitingPlayers():
         # Play hold music to all connected clients
         tasks = []
         for client_conn in clients:
-            tasks.append(playAudio("sound:music", client_conn.id))
+            tasks.append(playAudio("sound:hold_music", client_conn.id))
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         await asyncio.sleep(2)  # Check every 2 seconds
