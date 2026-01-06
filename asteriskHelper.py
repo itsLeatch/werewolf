@@ -68,7 +68,7 @@ async def event_listener(client):
     """The task that listens to events as long as the code runs"""
     async with client.on_channel_event('StasisStart') as listener:
         async for objs, event in listener:
-            channel = objs
+            channel = event.channel
             if channel:
                 print("New channel joining!")
                 client.taskgroup.start_soon(HelloState(channel).start_task)
@@ -77,7 +77,7 @@ async def event_listener_end(client):
     """Listen for channel leaving Stasis and cleanup player state"""
     async with client.on_channel_event('StasisEnd') as listener:
         async for objs, event in listener:
-            channel = objs
+            channel = event.channel
             if not channel:
                 continue
             channel_id = channel.id
