@@ -1,6 +1,8 @@
 import time
 import asteriskHelper
 import asyncio
+import socket
+import random
 
 roles = ["wolves", "seear", "villager", "witch"]
 class Player:
@@ -8,6 +10,7 @@ class Player:
         self.role = roles[roleNumber]
         self.number = playerNuber
         self.isAlive = True
+        self.clientObject = None
 
 players = []
 def getRoleCount(roleName):
@@ -16,6 +19,7 @@ def getRoleCount(roleName):
         if  player.role == roleName:
             counter += 1
     return counter
+
 #find all players with a specific role
 def getListOfAllAlivePlayersWithRole(roleName):
     playerOfRole = []
@@ -48,51 +52,87 @@ def getMostVoteResult(results):
 def getAllPlayersAlive():
     return [player for player in players if player.isAlive == True]
 
+def reassignRoles():
+    rolePool = []
+    if len(players) < 4:
+        print("Not enough players to start the game")
+        return
+    if len(players) == 5:
+        rolePool = ["wolves", "seear", "witch", "villager", "villager"]
+    if len(players) == 6:
+        rolePool = ["wolves", "wolves", "seear", "witch", "villager", "villager"]
+    if len(players) == 7:
+        rolePool = ["wolves", "wolves", "seear", "witch", "villager", "villager", "villager"]
+    if len(players) == 8:
+        rolePool = ["wolves", "wolves", "seear", "witch", "villager", "villager", "villager", "villager"]
+    if len(players) == 9:
+        rolePool = ["wolves", "wolves", "seear", "witch", "villager", "villager", "villager", "villager", "villager"]
+    else:
+        print("Not yet implemented for more than 9 players")
+
+    for player in players:
+        assignedRole = rolePool.pop(random.randint(0, len(rolePool)-1))
+        player.role = assignedRole
+
+HOST = "localhost"  # Standard loopback interface address (localhost)
+PORT = 28830  # Port to listen on (non-privileged ports are > 1023)
+
+numberOfPlayers = int(input("Enter number of players: "))
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.bind((HOST, PORT))
+    s.listen()
+    for i in range(numberOfPlayers):
+        conn, addr = s.accept()
+        print(f"Connected by {addr}")
+        players.append(Player(i % len(roles), i+1))
+        players[-1].clientObject = conn
+        players[-1].clientObject.sendall(f"Your player number is {i+1}".encode())
+print(f"The game can start now")
 #add all of the players here and wait for them to game to start
-players = [Player(0, 1), Player(1, 2), Player(2, 3), Player(3, 4), Player(0, 5), Player(2, 6)] #test players
+reassignRoles()
 
 #start game
     #introduce each player by giving him access to the 
-for player in players:
-    asteriskHelper.givePlayersRightToSpeak([player])
-    time.sleep(5000) #give them some time to introduce
+#for player in players:
+    #asteriskHelper.givePlayersRightToSpeak([player])
+    #time.sleep(5000) #give them some time to introduce
     
 #first round (makes not difference for the current roles, so just ignore it)
 
 
 #start the normal game loop
-while(isGameOver() == False):
+while(isGameOver() == True):
     #night time
-    asteriskHelper.playAudio("Everyone is falling a sleep")
-    asteriskHelper.playAudio("The seears are waking up")
+    asteriskHelper.playAudio("Everyone is falling a sleep", players)
+    asteriskHelper.playAudio("The seears are waking up", players)
     
     allSeears = getListOfAllAlivePlayersWithRole("seears")
     for seear in allSeears:
-        asteriskHelper.playAudio(f"Seear please choose someone to see")
+        asteriskHelper.playAudio(f"Seear please choose someone to see", players)
         result = asyncio.run(requestUserInput(seear.playerNumber))
         for player in players:
             if player.number == result:
                 if(player.role == "wolves"):
-                    asteriskHelper.playAudio("The person is a wolve")
+                    asteriskHelper.playAudio("The person is a wolve", players)
                 else:
-                    asteriskHelper.playAudio("The person is not a wolve")
+                    asteriskHelper.playAudio("The person is not a wolve", players)
     
 
 
     allWolves = getListOfAllAlivePlayersWithRole("wolves")
     asteriskHelper.connectPlayersPrivatly(allWolves)
-    asteriskHelper.playAudio("Introduction to wolves voting system")
+    asteriskHelper.playAudio("Introduction to wolves voting system", players) #maybe we can even tell them even the number of the victim
     wolvesVotingResult = asyncio.run(requestMulitibleUserInputs(allWolves))
     possibleVictim = getMostVoteResult(wolvesVotingResult)
     
 
     allWitches = getListOfAllAlivePlayersWithRole("witch")
     asteriskHelper.connectPlayersPrivatly(allWitches)
-    asteriskHelper.playAudio("Introduction to witches voting system") #maybe we can even tell them even the number of the victim 
+    asteriskHelper.playAudio("Introduction to witches voting system", players) #maybe we can even tell them even the number of the victim 
     witchesVotingResult = asyncio.run(requestMulitibleUserInputs(allWitches))
     if(getMostVoteResult(witchesVotingResult) == 1):
         #now it's time to kill someone
-        asteriskHelper.playAudio("Introduce who to kill")
+        asteriskHelper.playAudio("Introduce who to kill", players)
         seearsKillResult = requestMulitibleUserInputs(allWitches)
         for player in players:
             if player.playerNumber == getMostVoteResult(seearsKillResult):
@@ -105,20 +145,20 @@ while(isGameOver() == False):
     #daytime
     asteriskHelper.connectPlayersPrivatly(players)
     if(possibleVictim == -1):
-        asteriskHelper.playAudio("no one died")
+        asteriskHelper.playAudio("no one died", players)
     else:
         for player in players:
             if(player.number == possibleVictim):
                 player.isAlive == False
-        asteriskHelper.playAudio("someone passed away") # also maybe tell the number
+        asteriskHelper.playAudio("someone passed away", players) # also maybe tell the number
     asteriskHelper.givePlayersRightToSpeak(getAllPlayersAlive())
 
     #village voting system 
-    asteriskHelper.playAudio("Ask if they want to kill someone") #maybe we can even tell them even the number of the victim 
+    asteriskHelper.playAudio("Ask if they want to kill someone", players) #maybe we can even tell them even the number of the victim 
     villageVotingResult = asyncio.run(requestMulitibleUserInputs(getAllPlayersAlive()))
     if(getMostVoteResult(villageVotingResult) == 1):
         #they decided to 
-        asteriskHelper.playAudio("Introduce who to kill")
+        asteriskHelper.playAudio("Introduce who to kill", players)
         villageKillResult = requestMulitibleUserInputs(getAllPlayersAlive())
         for player in players:
             if player.playerNumber == getMostVoteResult(villageKillResult):
