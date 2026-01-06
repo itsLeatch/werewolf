@@ -139,7 +139,7 @@ def getConnectionData(playerNumber):
             return client
     return None
 
-async def playAudio(channel_id, audio_name):
+async def playAudio(audio_name, channel_id):
     try:
         # Fetch channel object
         channel = await client.channels.get(channel_id)
