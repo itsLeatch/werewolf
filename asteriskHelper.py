@@ -141,17 +141,15 @@ def getConnectionData(playerNumber):
 
 async def playAudio(audio_name, channel_id):
     try:
-        # Fetch channel object
+        # Ensure the channel exists
         channel = await client.channels.get(channel_id)
 
-        # Only play if channel is live and answered
-        if channel.state == "Up":
-            # Answer if not already
-            if not channel.answer:
-                await channel.answer()
+        # Answer if not already
+        if channel.state == "Down":
+            await channel.answer()
 
-            # Play the audio
-            await channel.play(media=audio_name)
+        # Play audio
+        await client.channels.play(channel.id, media=audio_name)
     except Exception as e:
         print(f"Failed to play audio to {channel_id}: {e}")
 
