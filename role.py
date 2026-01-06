@@ -1,136 +1,117 @@
-import time
-import asteriskHelper
 import asyncio
-
-roles = ["wolves", "seear", "villager", "witch"]
-class Player:
-    def __init__(self, roleNumber, playerNuber):
-        self.role = roles[roleNumber]
-        self.number = playerNuber
-        self.isAlive = True
-
-players = []
-def getRoleCount(roleName):
-    counter = 0
-    for player in players:
-        if  player.role == roleName:
-            counter += 1
-    return counter
-#find all players with a specific role
-def getListOfAllAlivePlayersWithRole(roleName):
-    playerOfRole = []
-    for player in players:
-        if (player.role == roleName and player.isAlive):
-            playerOfRole.append(player)
-    return playerOfRole
-
-def isGameOver():
-    return len(getListOfAllAlivePlayersWithRole(players)) <= 1 or getRoleCount("wolves") <= 0 or getRoleCount("wolves") >= len(getAllPlayersAlive(players)) - getRoleCount("wolves")
+import asteriskHelper
+from models import (
+    Player, players, createPlayer, getRoleCount, 
+    getListOfAllAlivePlayersWithRole, isGameOver, getAllPlayersAlive
+)
 
 async def requestUserInput(playerNumber):
-    lastUserInput = asteriskHelper.getUserInput(playerNumber)
-    while (lastUserInput == playerNumber or lastUserInput.isdigit() == False):
-        asteriskHelper.playAudio("You can not pick yourself")
-        lastUserInput = asteriskHelper.getUserInput(playerNumber)
+    """Request a single user input from a player"""
+    lastUserInput = await asteriskHelper.getUserInput(playerNumber, 10)
+    while (lastUserInput == playerNumber or (lastUserInput and not lastUserInput.isdigit())):
+        await asteriskHelper.playAudio("You can not pick yourself", playerNumber)
+        lastUserInput = await asteriskHelper.getUserInput(playerNumber, 10)
     return lastUserInput
 
-async def requestMulitibleUserInputs(listOfPlayers):
+async def requestMultipleUserInputs(listOfPlayers):
+    """Request inputs from multiple players concurrently"""
     getUserInputs = []
     for player in listOfPlayers:
-        getUserInputs.append(requestUserInput(player))
+        getUserInputs.append(requestUserInput(player.number))
     results = await asyncio.gather(*getUserInputs)
     return results
 
-#note that it go on even if there is a draw
 def getMostVoteResult(results):
-    max(set(results), key=results.count)
+    """Return the most common vote result"""
+    if not results:
+        return None
+    return max(set(results), key=results.count)
 
-def getAllPlayersAlive():
-    return [player for player in players if player.isAlive == True]
-
-#add all of the players here and wait for them to game to start
-players = [Player(0, 1), Player(1, 2), Player(2, 3), Player(3, 4), Player(0, 5), Player(2, 6)] #test players
-
-#start game
-    #introduce each player by giving him access to the 
-for player in players:
-    asteriskHelper.givePlayersRightToSpeak([player])
-    time.sleep(5000) #give them some time to introduce
+async def run_game():
+    """Main game loop - runs concurrently with ARI listener"""
+    # Players should already be added by the ARI connection handler
+    # Just wait a moment for them to be ready
+    await asyncio.sleep(1)
     
-#first round (makes not difference for the current roles, so just ignore it)
-
-
-#start the normal game loop
-while(isGameOver() == False):
-    #night time
-    asteriskHelper.playAudio("Everyone is falling a sleep")
-    asteriskHelper.playAudio("The seears are waking up")
+    print(f"Game starting with {len(players)} players")
     
-    allSeears = getListOfAllAlivePlayersWithRole("seears")
-    for seear in allSeears:
-        asteriskHelper.playAudio(f"Seear please choose someone to see")
-        result = asyncio.run(requestUserInput(seear.playerNumber))
-        for player in players:
-            if player.number == result:
-                if(player.role == "wolves"):
-                    asteriskHelper.playAudio("The person is a wolve")
-                else:
-                    asteriskHelper.playAudio("The person is not a wolve")
+    # Introduce each player
+    for player in players:
+        await asteriskHelper.givePlayersRightToSpeak([player])
+        await asyncio.sleep(5)  # give them some time to introduce
     
+    # Start the main game loop
+    while not isGameOver():
+        # Night time
+        await asteriskHelper.playAudio("Everyone is falling asleep", None)
+        await asteriskHelper.playAudio("The seers are waking up", None)
+        
+        # Seers vote
+        allSeers = getListOfAllAlivePlayersWithRole("seer")
+        for seer in allSeers:
+            await asteriskHelper.playAudio(f"Seer please choose someone to see", seer.number)
+            result = await requestUserInput(seer.number)
+            for player in players:
+                if result and player.number == int(result):
+                    if player.role == "wolves":
+                        await asteriskHelper.playAudio("The person is a wolf", seer.number)
+                    else:
+                        await asteriskHelper.playAudio("The person is not a wolf", seer.number)
+        
+        # Wolves vote
+        allWolves = getListOfAllAlivePlayersWithRole("wolves")
+        possibleVictim = None
+        if allWolves:
+            await asteriskHelper.connectPlayersPrivatly(allWolves, "wolves_bridge")
+            await asteriskHelper.playAudio("Introduction to wolves voting system", None)
+            wolvesVotingResult = await requestMultipleUserInputs(allWolves)
+            possibleVictim = getMostVoteResult(wolvesVotingResult)
 
+        # Witches vote
+        allWitches = getListOfAllAlivePlayersWithRole("witch")
+        if allWitches:
+            await asteriskHelper.connectPlayersPrivatly(allWitches, "witches_bridge")
+            await asteriskHelper.playAudio("Introduction to witches voting system", None)
+            witchesVotingResult = await requestMultipleUserInputs(allWitches)
+            if getMostVoteResult(witchesVotingResult) == "1":
+                # Kill someone
+                await asteriskHelper.playAudio("Introduce who to kill", None)
+                witchKillResult = await requestMultipleUserInputs(allWitches)
+                for player in players:
+                    killTarget = getMostVoteResult(witchKillResult)
+                    if killTarget and player.number == int(killTarget):
+                        player.isAlive = False
+                        break
+            elif getMostVoteResult(witchesVotingResult) == "2":
+                # Heal the possible victim
+                possibleVictim = -1
+        
+        # Daytime
+        await asteriskHelper.connectPlayersPrivatly(players, "day_bridge")
+        if possibleVictim == -1:
+            await asteriskHelper.playAudio("No one died", None)
+        else:
+            for player in players:
+                if player.number == possibleVictim:
+                    player.isAlive = False
+            await asteriskHelper.playAudio("Someone passed away", None)
+        await asteriskHelper.givePlayersRightToSpeak(getAllPlayersAlive())
 
-    allWolves = getListOfAllAlivePlayersWithRole("wolves")
-    asteriskHelper.connectPlayersPrivatly(allWolves)
-    asteriskHelper.playAudio("Introduction to wolves voting system")
-    wolvesVotingResult = asyncio.run(requestMulitibleUserInputs(allWolves))
-    possibleVictim = getMostVoteResult(wolvesVotingResult)
-    
+        # Village voting system 
+        await asteriskHelper.playAudio("Ask if they want to kill someone", None)
+        villageVotingResult = await requestMultipleUserInputs(getAllPlayersAlive())
+        if getMostVoteResult(villageVotingResult) == "1":
+            # They decided to kill
+            await asteriskHelper.playAudio("Introduce who to kill", None)
+            villageKillResult = await requestMultipleUserInputs(getAllPlayersAlive())
+            for player in players:
+                killTarget = getMostVoteResult(villageKillResult)
+                if killTarget and player.number == int(killTarget):
+                    player.isAlive = False
+                    break
 
-    allWitches = getListOfAllAlivePlayersWithRole("witch")
-    asteriskHelper.connectPlayersPrivatly(allWitches)
-    asteriskHelper.playAudio("Introduction to witches voting system") #maybe we can even tell them even the number of the victim 
-    witchesVotingResult = asyncio.run(requestMulitibleUserInputs(allWitches))
-    if(getMostVoteResult(witchesVotingResult) == 1):
-        #now it's time to kill someone
-        asteriskHelper.playAudio("Introduce who to kill")
-        seearsKillResult = requestMulitibleUserInputs(allWitches)
-        for player in players:
-            if player.playerNumber == getMostVoteResult(seearsKillResult):
-                player.isAlive = False
-                break
-    elif(getMostVoteResult(witchesVotingResult) == 2):
-        #heal the possible victim
-        possibleVictim = -1
-    
-    #daytime
-    asteriskHelper.connectPlayersPrivatly(players)
-    if(possibleVictim == -1):
-        asteriskHelper.playAudio("no one died")
-    else:
-        for player in players:
-            if(player.number == possibleVictim):
-                player.isAlive == False
-        asteriskHelper.playAudio("someone passed away") # also maybe tell the number
-    asteriskHelper.givePlayersRightToSpeak(getAllPlayersAlive())
+    # Game over
+    for player in players:
+        asteriskHelper.kickPlayer(player.number)
 
-    #village voting system 
-    asteriskHelper.playAudio("Ask if they want to kill someone") #maybe we can even tell them even the number of the victim 
-    villageVotingResult = asyncio.run(requestMulitibleUserInputs(getAllPlayersAlive()))
-    if(getMostVoteResult(villageVotingResult) == 1):
-        #they decided to 
-        asteriskHelper.playAudio("Introduce who to kill")
-        villageKillResult = requestMulitibleUserInputs(getAllPlayersAlive())
-        for player in players:
-            if player.playerNumber == getMostVoteResult(villageKillResult):
-                player.isAlive = False
-                break
-
-#game over
-for player in players:
-    asteriskHelper.kickPlayer(player.number)
-
-#finished
-
-#TODO:
-#mute dead players
-#figure out if we can play audio from an ai to call each player by his number
+    print("Game finished!")

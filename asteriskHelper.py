@@ -4,6 +4,8 @@ import anyio
 import asyncari
 from asyncari.state import ToplevelChannelState, DTMFHandler
 
+from models import createPlayer
+
 # --- Configuration ---
 ARI_URL = "http://localhost:8088/"
 ARI_USERNAME = "asterisk"
@@ -12,6 +14,8 @@ APP_NAME = "hello" # Must match the Stasis() app name in extensions.conf
 
 clients = []
 app = None
+game_ready_event = asyncio.Event()  # Signals when 6 players have joined
+PLAYERS_NEEDED = 6
 
 class Connection:
     def __init__(self, channel):
@@ -26,7 +30,6 @@ class Connection:
         self.data = {}
 
 class HelloState(ToplevelChannelState, DTMFHandler):
-
     # Runs on every new connection
     async def on_start(self, channel):
         print(f"New user connected! Channel: {self.channel_id}")
@@ -34,6 +37,12 @@ class HelloState(ToplevelChannelState, DTMFHandler):
         player = Connection(channel)
         player.join_time = datetime.datetime.now()
         clients.append(player)
+        createPlayer(self.channel_id)
+        
+        # Check if we now have enough players to start the game
+        if len(clients) == PLAYERS_NEEDED:
+            print(f"Reached {PLAYERS_NEEDED} players! Game will start soon.")
+            game_ready_event.set()
 
     async def on_dtmf(self, event):
         print(f"Digit {event.digit} pressed on channel {self.channel_id}")
@@ -64,15 +73,75 @@ async def main():
     ) as client:
         client.taskgroup.start_soon(event_listener, client)
         print("App starting soon!")
+        print(f"Waiting for {PLAYERS_NEEDED} players to join...")
 
-        async for event in client:
-            print(f'Global event received: {event}')
-            print("Use this event for anything central, that needs more than one channel!")
+        # Import here to avoid circular imports
+        from role import run_game
+        
+        # Run game loop manager and ARI listener concurrently
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(run_ari_listener, client)
+            tg.start_soon(playHoldMusicForWaitingPlayers)
+            tg.start_soon(game_loop_manager, run_game)
 
+async def run_ari_listener(client):
+    """Run the ARI event listener loop"""
+    async for event in client:
+        print(f'Global event received: {event}')
+        print("Use this event for anything central, that needs more than one channel!")
+
+async def game_loop_manager(run_game):
+    """Manages game instances - waits for players, starts game, repeats"""
+    while True:
+        # Wait for 6 players to join
+        print(f"Waiting for {PLAYERS_NEEDED} players to join...")
+        game_ready_event.clear()
+        await game_ready_event.wait()
+        
+        print(f"{PLAYERS_NEEDED} players joined! Starting game...")
+        await asyncio.sleep(1)  # Brief pause before starting
+        
+        # Run the game
+        await run_game()
+        
+        # Game finished - clear players and wait for next batch
+        from models import players
+        players.clear()
+        clients.clear()
+        print(f"Game finished! Waiting for next {PLAYERS_NEEDED} players...")
+
+async def playHoldMusic(channel_id):
+    """Play hold music on a specific channel in a loop"""
+    try:
+        while True:
+            await playAudio("sound:music", channel_id)
+            await asyncio.sleep(30)  # Play for 30 seconds, then loop
+    except Exception as e:
+        print(f"Hold music stopped for {channel_id}: {e}")
+
+async def playHoldMusicForWaitingPlayers():
+    """Play hold music for all waiting players until game starts"""
+    while len(clients) < PLAYERS_NEEDED and not game_ready_event.is_set():
+        # Play hold music to all connected clients
+        tasks = []
+        for client_conn in clients:
+            tasks.append(playAudio("sound:music", client_conn.id))
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.sleep(2)  # Check every 2 seconds
+
+"""get connection data"""
+def getConnectionData(playerNumber):
+    for client in clients:
+        if client.id == playerNumber:
+            return client
+    return None
 
 async def playAudio(audioName, channelId):
+    """Play audio on a specific channel, or broadcast if channelId is None"""
     print(f"Playing audio: {audioName} (not implemented)")
-    await client.channels.play(channel=channelId, media=audioName)
+    if channelId and client:
+        await client.channels.play(channel=channelId, media=audioName)
 
 """players can speak together privatly to find a good method"""
 async def connectPlayersPrivatly(listOfPlayers, nameOfBridge):
