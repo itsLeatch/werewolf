@@ -114,7 +114,7 @@ async def playHoldMusic(channel_id):
     """Play hold music on a specific channel in a loop"""
     try:
         while True:
-            await playAudio("sound:music", channel_id)
+            await playAudio("sound:hold_music", channel_id)
             await asyncio.sleep(30)  # Play for 30 seconds, then loop
     except Exception as e:
         print(f"Hold music stopped for {channel_id}: {e}")
