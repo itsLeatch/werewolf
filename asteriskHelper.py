@@ -4,7 +4,7 @@ import anyio
 import asyncari
 from asyncari.state import ToplevelChannelState, DTMFHandler
 
-from models import createPlayer
+from models import createPlayer, removePlayer
 
 # --- Configuration ---
 ARI_URL = "http://localhost:8088/"
@@ -72,6 +72,24 @@ async def event_listener(client):
             if channel:
                 print("New channel joining!")
                 client.taskgroup.start_soon(HelloState(channel).start_task)
+
+async def event_listener_end(client):
+    """Listen for channel leaving Stasis and cleanup player state"""
+    async with client.on_channel_event('StasisEnd') as listener:
+        async for objs, event in listener:
+            channel = objs.get('channel')
+            if not channel:
+                continue
+            channel_id = channel.id
+            print(f"Channel {channel_id} left Stasis. Cleaning up...")
+            # Remove from local connection list
+            global clients
+            clients = [c for c in clients if c.id != channel_id]
+            # Remove from global players list
+            try:
+                removePlayer(channel_id)
+            except Exception as e:
+                print(f"Failed to remove player {channel_id}: {e}")
         
 async def main():
     """Runs the main event loop"""
@@ -84,6 +102,7 @@ async def main():
         password=ARI_PASSWORD
     ) as client:
         client.taskgroup.start_soon(event_listener, client)
+        client.taskgroup.start_soon(event_listener_end, client)
         print("App starting soon!")
         print(f"Waiting for {PLAYERS_NEEDED} players to join...")
 
