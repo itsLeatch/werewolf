@@ -141,15 +141,18 @@ def getConnectionData(playerNumber):
 
 async def playAudio(audio_name, channel_id):
     try:
-        # Ensure the channel exists
+        # Fetch channel object
         channel = await client.channels.get(channel_id)
 
         # Answer if not already
         if channel.state == "Down":
             await channel.answer()
 
-        # Play audio
-        await client.channels.play(channel.id, media=audio_name)
+        # Play the audio
+        await channel.play(media=audio_name)  # use Channel object
+        # OR, if you only have ID:
+        # await client.channels.play.post(channel_id, media=audio_name)
+
     except Exception as e:
         print(f"Failed to play audio to {channel_id}: {e}")
 
