@@ -139,11 +139,21 @@ def getConnectionData(playerNumber):
             return client
     return None
 
-async def playAudio(audioName, channelId):
-    """Play audio on a specific channel, or broadcast if channelId is None"""
-    print(f"Playing audio: {audioName} on channel: {channelId}")
-    if channelId and client:
-        await client.channels.play(channel=channelId, media=audioName)
+async def playAudio(channel_id, audio_name):
+    try:
+        # Fetch channel object
+        channel = await client.channels.get(channel_id)
+
+        # Only play if channel is live and answered
+        if channel.state == "Up":
+            # Answer if not already
+            if not channel.answer:
+                await channel.answer()
+
+            # Play the audio
+            await channel.play(media=audio_name)
+    except Exception as e:
+        print(f"Failed to play audio to {channel_id}: {e}")
 
 """players can speak together privatly to find a good method"""
 async def connectPlayersPrivatly(listOfPlayers, nameOfBridge):
