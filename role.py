@@ -34,48 +34,73 @@ async def run_game():
     await asyncio.sleep(1)
     
     print(f"Game starting with {len(players)} players")
+    # Assign game player numbers
+    from models import assignGamePlayerNumbers
+    assignGamePlayerNumbers()
     
+    welcomeBridge = await asteriskHelper.connectPlayersPrivatly(players, "introduction_bridge")
     # Introduce each player
     for player in players:
-        await asteriskHelper.givePlayersRightToSpeak([player])
+        await asteriskHelper.playAudio("sound:audio/you_are_the", player.number)
+        if player.role == "wolves":
+            await asteriskHelper.playAudio("sound:audio/werewolf", player.number)
+        elif player.role == "seer":
+            await asteriskHelper.playAudio("sound:audio/seer", player.number)
+        elif player.role == "villager":
+            await asteriskHelper.playAudio("sound:audio/villager", player.number)
+        elif player.role == "witch":
+            await asteriskHelper.playAudio("sound:audio/witch", player.number)
+        await asteriskHelper.allowSpeaker(player, 15)  # give them some time to introduce
         await asyncio.sleep(5)  # give them some time to introduce
     
+    await asteriskHelper.removeRoom(welcomeBridge.id)
     # Start the main game loop
     while not isGameOver():
         # Night time
-        await asteriskHelper.playAudio("Everyone is falling asleep", None)
-        await asteriskHelper.playAudio("The seers are waking up", None)
+        # await asteriskHelper.playAudio("Everyone is falling asleep", None)
+        # await asteriskHelper.playAudio("The seers are waking up", None)
         
         # Seers vote
         allSeers = getListOfAllAlivePlayersWithRole("seer")
         for seer in allSeers:
-            await asteriskHelper.playAudio(f"Seer please choose someone to see", seer.number)
+            await asteriskHelper.playAudio("sound:audio/If_you_would_like_to_see_a_player's_card,_press_1._If_you_would_like_to_continue,_press_2", seer.number)
             result = await requestUserInput(seer.number)
-            for player in players:
-                if result and player.number == int(result):
-                    if player.role == "wolves":
-                        await asteriskHelper.playAudio("The person is a wolf", seer.number)
-                    else:
-                        await asteriskHelper.playAudio("The person is not a wolf", seer.number)
+            if result == "1":
+                # await asteriskHelper.playAudio("Introduce who to see", seer.number)
+                result = await requestUserInput(seer.number)
+                for player in players:
+                    if result and player.gamePlayerNum == int(result):
+                        await asteriskHelper.playAudio(f"Player_{player.gamePlayerNum}", seer.number)
+                        await asteriskHelper.playAudio("sound:audio/is_the", seer.number)
+                        for player in players:
+                            if player.role == "wolves":
+                                await asteriskHelper.playAudio("sound:audio/werewolf", seer.number)
+                            elif player.role == "seer":
+                                await asteriskHelper.playAudio("sound:audio/seer", seer.number)
+                            elif player.role == "villager":
+                                await asteriskHelper.playAudio("sound:audio/villager", seer.number)
+                            elif player.role == "witch":
+                                await asteriskHelper.playAudio("sound:audio/witch", seer.number)
         
         # Wolves vote
         allWolves = getListOfAllAlivePlayersWithRole("wolves")
         possibleVictim = None
         if allWolves:
-            await asteriskHelper.connectPlayersPrivatly(allWolves, "wolves_bridge")
-            await asteriskHelper.playAudio("Introduction to wolves voting system", None)
+            bridge = await asteriskHelper.connectPlayersPrivatly(allWolves, "wolves_bridge")
+            await asteriskHelper.broadcastAudioToBridge(bridge.id, "sound:audio/Press_the_player_of_the_number_you_would_like_to_kill")
             wolvesVotingResult = await requestMultipleUserInputs(allWolves)
             possibleVictim = getMostVoteResult(wolvesVotingResult)
 
         # Witches vote
         allWitches = getListOfAllAlivePlayersWithRole("witch")
         if allWitches:
-            await asteriskHelper.connectPlayersPrivatly(allWitches, "witches_bridge")
-            await asteriskHelper.playAudio("Introduction to witches voting system", None)
+            bridge = await asteriskHelper.connectPlayersPrivatly(allWitches, "witches_bridge")
+            await asteriskHelper.broadcastAudioToBridge(bridge.id, "sound:audio/If_you_would_like_to_kill_a_player,_press_one")
+            await asteriskHelper.broadcastAudioToBridge(bridge.id, "sound:audio/If_you_would_like_to_revive_the_player,_press_two")
             witchesVotingResult = await requestMultipleUserInputs(allWitches)
             if getMostVoteResult(witchesVotingResult) == "1":
                 # Kill someone
-                await asteriskHelper.playAudio("Introduce who to kill", None)
+                await asteriskHelper.broadcastAudioToBridge(bridge.id, "sound:audio/Press_the_player_of_the_number_you_would_like_to_kill")
                 witchKillResult = await requestMultipleUserInputs(allWitches)
                 for player in players:
                     killTarget = getMostVoteResult(witchKillResult)
@@ -87,31 +112,38 @@ async def run_game():
                 possibleVictim = -1
         
         # Daytime
-        await asteriskHelper.connectPlayersPrivatly(players, "day_bridge")
+        bridge = await asteriskHelper.connectPlayersPrivatly(players, "day_bridge")
         if possibleVictim == -1:
-            await asteriskHelper.playAudio("No one died", None)
+            await asteriskHelper.broadcastAudioToBridge(bridge.id, "sound:audio/No_one")
+            await asteriskHelper.broadcastAudioToBridge(bridge.id, "sound:audio/Has_been_eliminated")
         else:
             for player in players:
                 if player.number == possibleVictim:
                     player.isAlive = False
-            await asteriskHelper.playAudio("Someone passed away", None)
+                    await asteriskHelper.broadcastAudioToBridge(bridge.id, f"sound:audio/Player_{player.gamePlayerNum}")
+                    await asteriskHelper.broadcastAudioToBridge(bridge.id, "sound:audio/Has_been_eliminated")
+                    await asteriskHelper.kickPlayer(player.number)
+                    break
         await asteriskHelper.givePlayersRightToSpeak(getAllPlayersAlive())
 
         # Village voting system 
-        await asteriskHelper.playAudio("Ask if they want to kill someone", None)
+        await asteriskHelper.broadcastAudioToBridge(bridge.id, "sound:audio/If_you_would_like_to_kill_a_player,_press_one")
         villageVotingResult = await requestMultipleUserInputs(getAllPlayersAlive())
         if getMostVoteResult(villageVotingResult) == "1":
             # They decided to kill
-            await asteriskHelper.playAudio("Introduce who to kill", None)
+            await asteriskHelper.broadcastAudioToBridge(bridge.id, "sound:audio/Press_the_player_of_the_number_you_would_like_to_kill")
             villageKillResult = await requestMultipleUserInputs(getAllPlayersAlive())
             for player in players:
                 killTarget = getMostVoteResult(villageKillResult)
                 if killTarget and player.number == int(killTarget):
                     player.isAlive = False
+                    await asteriskHelper.broadcastAudioToBridge(bridge.id, f"sound:audio/Player_{player.gamePlayerNum}")
+                    await asteriskHelper.broadcastAudioToBridge(bridge.id, "sound:audio/Has_been_eliminated")
+                    await asteriskHelper.kickPlayer(player.number)
                     break
 
     # Game over
     for player in players:
-        asteriskHelper.kickPlayer(player.number)
+        await asteriskHelper.kickPlayer(player.number)
 
     print("Game finished!")

@@ -15,7 +15,7 @@ APP_NAME = "hello" # Must match the Stasis() app name in extensions.conf
 clients = []
 app = None
 game_ready_event = asyncio.Event()  # Signals when 6 players have joined
-PLAYERS_NEEDED = 6
+PLAYERS_NEEDED = 3
 
 class Connection:
     def __init__(self, channel):
@@ -177,6 +177,23 @@ async def connectPlayersPrivatly(listOfPlayers, nameOfBridge):
         )
     return bridge.id
 
+async def connectPlayersMuted(listOfPlayers, nameOfBridge):
+    bridge = await app.bridges.create(
+        type="mixing",
+        name=nameOfBridge
+    )
+    for player in listOfPlayers:
+        await app.bridges.addChannel(
+            bridgeId=bridge.id,
+            channelId=player.number
+        )
+        await app.channels.mute(
+            channelId=player.number,
+            direction="in",
+            mute=True
+        )
+    return bridge.id
+
 """a player is removed from the room they were in"""
 async def removePlayerFromRoom(player, bridgeId):
     try:
@@ -189,6 +206,14 @@ async def removePlayerFromRoom(player, bridgeId):
         print("Channel already removed!")
         pass
 
+async def removeRoom(bridgeId):
+    try:
+        print("Removing bridge!")
+        await app.bridges.delete(bridgeId=bridgeId)
+    except Exception:
+        print("Bridge already removed!")
+        pass
+
 async def routePlayerToDifferentRoom(player, oldBridgeId, newBridgeId):
     await removePlayerFromRoom(player, oldBridgeId);
     await app.bridges.addChannel(
@@ -196,6 +221,16 @@ async def routePlayerToDifferentRoom(player, oldBridgeId, newBridgeId):
         channelId=player.number
     )
 
+
+async def broadcastAudioToBridge(bridgeId, audio_name):
+    """Play audio to all channels in a bridge"""
+    try:
+        bridge_channels = await app.bridges.get(bridgeId=bridgeId)
+        for channel_id in bridge_channels.channels:
+            await playAudio(audio_name, channel_id)
+    except Exception as e:
+        print(f"Failed to broadcast audio: {e}")
+        
 
 """all other players can listen but not talk. one person speaks at a time.  """
 async def givePlayersRightToSpeak(listOfPlayers, time=30):

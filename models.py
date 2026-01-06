@@ -7,6 +7,7 @@ class Player:
         self.role = roles[roleNumber]
         self.number = playerNumber
         self.isAlive = True
+        self.gamePlayerNum = -1  # To be assigned when game starts
 
 players = []
 
@@ -32,6 +33,11 @@ def getListOfAllAlivePlayersWithRole(roleName):
         if (player.role == roleName and player.isAlive):
             playerOfRole.append(player)
     return playerOfRole
+
+def assignGamePlayerNumbers():
+    alivePlayers = getAllPlayersAlive()
+    for index, player in enumerate(alivePlayers):
+        player.gamePlayerNum = index + 1
 
 def isGameOver():
     return len(getAllPlayersAlive()) <= 1 or getRoleCount("wolves") <= 0 or getRoleCount("wolves") >= len(getAllPlayersAlive()) - getRoleCount("wolves")
