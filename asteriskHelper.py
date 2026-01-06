@@ -13,7 +13,6 @@ ARI_PASSWORD = "asterisk"
 APP_NAME = "hello" # Must match the Stasis() app name in extensions.conf
 
 clients = []
-app = None
 game_ready_event = asyncio.Event()  # Signals when 6 players have joined
 PLAYERS_NEEDED = 3
 
@@ -93,7 +92,7 @@ async def event_listener_end(client):
         
 async def main():
     """Runs the main event loop"""
-    global client, app
+    global client
 
     async with asyncari.connect(
         base_url=ARI_URL,
@@ -101,9 +100,6 @@ async def main():
         username=ARI_USERNAME,
         password=ARI_PASSWORD
     ) as client:
-        # Set app globally FIRST before starting any tasks
-        app = client
-        
         client.taskgroup.start_soon(event_listener, client)
         client.taskgroup.start_soon(event_listener_end, client)
         print("App starting soon!")
@@ -115,8 +111,8 @@ async def main():
         # Run game loop manager and ARI listener concurrently
         async with anyio.create_task_group() as tg:
             tg.start_soon(run_ari_listener, client)
-            tg.start_soon(playHoldMusicForWaitingPlayers)
-            tg.start_soon(game_loop_manager, run_game)
+            tg.start_soon(playHoldMusicForWaitingPlayers, client)
+            tg.start_soon(game_loop_manager, run_game, client)
 
 async def run_ari_listener(client):
     """Run the ARI event listener loop"""
@@ -124,7 +120,7 @@ async def run_ari_listener(client):
         print(f'Global event received: {event}')
         print("Use this event for anything central, that needs more than one channel!")
 
-async def game_loop_manager(run_game):
+async def game_loop_manager(run_game, client):
     """Manages game instances - waits for players, starts game, repeats"""
     while True:
         # Wait for 6 players to join
@@ -135,8 +131,8 @@ async def game_loop_manager(run_game):
         print(f"{PLAYERS_NEEDED} players joined! Starting game...")
         await asyncio.sleep(1)  # Brief pause before starting
         
-        # Run the game
-        await run_game()
+        # Run the game with the client
+        await run_game(client)
         
         # Game finished - clear players and wait for next batch
         from models import players
@@ -153,13 +149,13 @@ async def playHoldMusic(channel_id):
     except Exception as e:
         print(f"Hold music stopped for {channel_id}: {e}")
 
-async def playHoldMusicForWaitingPlayers():
+async def playHoldMusicForWaitingPlayers(client):
     """Play hold music for all waiting players until game starts"""
     while len(clients) < PLAYERS_NEEDED and not game_ready_event.is_set():
         # Play hold music to all connected clients
         tasks = []
         for client_conn in clients:
-            tasks.append(playAudio("sound:hold_music", client_conn.id))
+            tasks.append(playAudio(client, "sound:hold_music", client_conn.id))
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         await asyncio.sleep(2)  # Check every 2 seconds
@@ -171,7 +167,7 @@ def getConnectionData(playerNumber):
             return client
     return None
 
-async def playAudio(audio_name, channel_id):
+async def playAudio(client, audio_name, channel_id):
     """Play audio on a channel; uses keyword args to match asyncari signatures"""
     try:
         # Fetch channel object by ID; asyncari resources expect keyword arguments
@@ -186,32 +182,30 @@ async def playAudio(audio_name, channel_id):
         print(f"Failed to play audio to {channel_id}: {e}")
 
 """players can speak together privatly to find a good method"""
-async def connectPlayersPrivatly(listOfPlayers, nameOfBridge):
-    global app
+async def connectPlayersPrivatly(client, listOfPlayers, nameOfBridge):
     print(f"Trying to connect players ${listOfPlayers}, but implement the function first")
-    bridge = await app.bridges.create(
+    bridge = await client.bridges.create(
         type="mixing",
         name=nameOfBridge
     )
     for player in listOfPlayers:
-        await app.bridges.addChannel(
+        await client.bridges.addChannel(
             bridgeId=bridge.id,
             channelId=player.number
         )
     return bridge.id
 
-async def connectPlayersMuted(listOfPlayers, nameOfBridge):
-    global app
-    bridge = await app.bridges.create(
+async def connectPlayersMuted(client, listOfPlayers, nameOfBridge):
+    bridge = await client.bridges.create(
         type="mixing",
         name=nameOfBridge
     )
     for player in listOfPlayers:
-        await app.bridges.addChannel(
+        await client.bridges.addChannel(
             bridgeId=bridge.id,
             channelId=player.number
         )
-        await app.channels.mute(
+        await client.channels.mute(
             channelId=player.number,
             direction="in",
             mute=True
@@ -219,11 +213,10 @@ async def connectPlayersMuted(listOfPlayers, nameOfBridge):
     return bridge.id
 
 """a player is removed from the room they were in"""
-async def removePlayerFromRoom(player, bridgeId):
-    global app
+async def removePlayerFromRoom(client, player, bridgeId):
     try:
         print("Removing channel!")
-        await app.bridges.removeChannel(
+        await client.bridges.removeChannel(
             bridgeId=bridgeId,
             channelId=player.number
         )
@@ -231,8 +224,7 @@ async def removePlayerFromRoom(player, bridgeId):
         print("Channel already removed!")
         pass
 
-async def removeRoom(bridgeId):
-    global app
+async def removeRoom(client, bridgeId):
     try:
         print("Removing bridge!")
         await app.bridges.delete(bridgeId=bridgeId)
@@ -240,50 +232,46 @@ async def removeRoom(bridgeId):
         print("Bridge already removed!")
         pass
 
-async def routePlayerToDifferentRoom(player, oldBridgeId, newBridgeId):
-    global app
-    await removePlayerFromRoom(player, oldBridgeId);
-    await app.bridges.addChannel(
+async def routePlayerToDifferentRoom(client, player, oldBridgeId, newBridgeId):
+    await removePlayerFromRoom(client, player, oldBridgeId);
+    await client.bridges.addChannel(
         bridgeId=newBridgeId,
         channelId=player.number
     )
 
 
-async def broadcastAudioToBridge(bridgeId, audio_name):
+async def broadcastAudioToBridge(client, bridgeId, audio_name):
     """Play audio to all channels in a bridge"""
-    global app
     try:
-        bridge_channels = await app.bridges.get(bridgeId=bridgeId)
+        bridge_channels = await client.bridges.get(bridgeId=bridgeId)
         for channel_id in bridge_channels.channels:
-            await playAudio(audio_name, channel_id)
+            await playAudio(client, audio_name, channel_id)
     except Exception as e:
         print(f"Failed to broadcast audio: {e}")
         
 
 """all other players can listen but not talk. one person speaks at a time.  """
-async def givePlayersRightToSpeak(listOfPlayers, time=30):
-    global app
-    bridge = await connectPlayersPrivatly(listOfPlayers, "right_to_speak")
+async def givePlayersRightToSpeak(client, listOfPlayers, time=30):
+    bridge = await connectPlayersPrivatly(client, listOfPlayers, "right_to_speak")
     for player in listOfPlayers:
-        await app.channels.mute(
+        await client.channels.mute(
             channelId=player.number,
             direction="in",
             mute=True
         )
     for player in listOfPlayers:
-        await allowSpeaker(player, time)
+        await allowSpeaker(client, player, time)
     for player in listOfPlayers:
-        await removePlayerFromRoom(player, bridge.id)
+        await removePlayerFromRoom(client, player, bridge.id)
     
-async def allowSpeaker(player, time=30):
-    global app
-    await app.channels.mute(
+async def allowSpeaker(client, player, time=30):
+    await client.channels.mute(
         channelId=player.number,
         direction="in",
         mute=False
     )
     await asyncio.sleep(time)
-    await app.channels.mute(
+    await client.channels.mute(
         channelId=player.number,
         direction="in",
         mute=True
@@ -300,10 +288,9 @@ async def getUserInput(player, timeout=15):
     return None
 
 """Hang up"""
-def kickPlayer(playerNumber):
-    global app
+def kickPlayer(client, playerNumber):
     print(f"Try to kick player {playerNumber}, but not implemented function!")
-    app.channels.hangup(channelId=playerNumber)
+    client.channels.hangup(channelId=playerNumber)
 
 
 
