@@ -93,7 +93,7 @@ async def event_listener_end(client):
         
 async def main():
     """Runs the main event loop"""
-    global client
+    global client, app
 
     async with asyncari.connect(
         base_url=ARI_URL,
@@ -101,6 +101,7 @@ async def main():
         username=ARI_USERNAME,
         password=ARI_PASSWORD
     ) as client:
+        app = client
         client.taskgroup.start_soon(event_listener, client)
         client.taskgroup.start_soon(event_listener_end, client)
         print("App starting soon!")
