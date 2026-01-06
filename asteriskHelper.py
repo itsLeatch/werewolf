@@ -140,19 +140,16 @@ def getConnectionData(playerNumber):
     return None
 
 async def playAudio(audio_name, channel_id):
+    """Play audio on a channel; uses keyword args to match asyncari signatures"""
     try:
-        # Fetch channel object
-        channel = await client.channels.get(channel_id)
+        # Fetch channel object by ID; asyncari resources expect keyword arguments
+        channel = await client.channels.get(channelId=channel_id)
 
-        # Answer if not already
+        # Answer if not already up
         if channel.state == "Down":
             await channel.answer()
 
-        # Play the audio
-        await channel.play(media=audio_name)  # use Channel object
-        # OR, if you only have ID:
-        # await client.channels.play.post(channel_id, media=audio_name)
-
+        await channel.play(media=audio_name)
     except Exception as e:
         print(f"Failed to play audio to {channel_id}: {e}")
 
