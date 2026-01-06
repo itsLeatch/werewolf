@@ -101,7 +101,9 @@ async def main():
         username=ARI_USERNAME,
         password=ARI_PASSWORD
     ) as client:
+        # Set app globally FIRST before starting any tasks
         app = client
+        
         client.taskgroup.start_soon(event_listener, client)
         client.taskgroup.start_soon(event_listener_end, client)
         print("App starting soon!")
@@ -185,6 +187,7 @@ async def playAudio(audio_name, channel_id):
 
 """players can speak together privatly to find a good method"""
 async def connectPlayersPrivatly(listOfPlayers, nameOfBridge):
+    global app
     print(f"Trying to connect players ${listOfPlayers}, but implement the function first")
     bridge = await app.bridges.create(
         type="mixing",
@@ -198,6 +201,7 @@ async def connectPlayersPrivatly(listOfPlayers, nameOfBridge):
     return bridge.id
 
 async def connectPlayersMuted(listOfPlayers, nameOfBridge):
+    global app
     bridge = await app.bridges.create(
         type="mixing",
         name=nameOfBridge
@@ -216,6 +220,7 @@ async def connectPlayersMuted(listOfPlayers, nameOfBridge):
 
 """a player is removed from the room they were in"""
 async def removePlayerFromRoom(player, bridgeId):
+    global app
     try:
         print("Removing channel!")
         await app.bridges.removeChannel(
@@ -227,6 +232,7 @@ async def removePlayerFromRoom(player, bridgeId):
         pass
 
 async def removeRoom(bridgeId):
+    global app
     try:
         print("Removing bridge!")
         await app.bridges.delete(bridgeId=bridgeId)
@@ -235,6 +241,7 @@ async def removeRoom(bridgeId):
         pass
 
 async def routePlayerToDifferentRoom(player, oldBridgeId, newBridgeId):
+    global app
     await removePlayerFromRoom(player, oldBridgeId);
     await app.bridges.addChannel(
         bridgeId=newBridgeId,
@@ -244,6 +251,7 @@ async def routePlayerToDifferentRoom(player, oldBridgeId, newBridgeId):
 
 async def broadcastAudioToBridge(bridgeId, audio_name):
     """Play audio to all channels in a bridge"""
+    global app
     try:
         bridge_channels = await app.bridges.get(bridgeId=bridgeId)
         for channel_id in bridge_channels.channels:
@@ -254,6 +262,7 @@ async def broadcastAudioToBridge(bridgeId, audio_name):
 
 """all other players can listen but not talk. one person speaks at a time.  """
 async def givePlayersRightToSpeak(listOfPlayers, time=30):
+    global app
     bridge = await connectPlayersPrivatly(listOfPlayers, "right_to_speak")
     for player in listOfPlayers:
         await app.channels.mute(
@@ -267,6 +276,7 @@ async def givePlayersRightToSpeak(listOfPlayers, time=30):
         await removePlayerFromRoom(player, bridge.id)
     
 async def allowSpeaker(player, time=30):
+    global app
     await app.channels.mute(
         channelId=player.number,
         direction="in",
@@ -291,6 +301,7 @@ async def getUserInput(player, timeout=15):
 
 """Hang up"""
 def kickPlayer(playerNumber):
+    global app
     print(f"Try to kick player {playerNumber}, but not implemented function!")
     app.channels.hangup(channelId=playerNumber)
 
