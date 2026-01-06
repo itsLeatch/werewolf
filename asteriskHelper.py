@@ -33,6 +33,8 @@ class HelloState(ToplevelChannelState, DTMFHandler):
     # Runs on every new connection
     async def on_start(self, channel):
         print(f"New user connected! Channel: {self.channel_id}")
+        # Answer the call so it does not immediately hang up after entering Stasis
+        await self.channel.answer()
         await self.channel.play(media="sound:hello-world")
         player = Connection(channel)
         player.join_time = datetime.datetime.now()
