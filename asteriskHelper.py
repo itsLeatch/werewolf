@@ -31,15 +31,15 @@ class Connection:
 
 class HelloState(ToplevelChannelState, DTMFHandler):
     # Runs on every new connection
-    async def on_start(self, channel):
+    async def on_start(self):
         print(f"New user connected! Channel: {self.channel}")
         # Answer the call so it does not immediately hang up after entering Stasis
         await self.channel.answer()
         await self.channel.play(media="sound:hello-world")
-        player = Connection(channel)
+        player = Connection(self.channel)
         player.join_time = datetime.datetime.now()
         clients.append(player)
-        createPlayer(self.channel_id)
+        createPlayer(self.channel.id)
         
         # Check if we now have enough players to start the game
         if len(clients) == PLAYERS_NEEDED:
