@@ -35,6 +35,16 @@ class HelloState(ToplevelChannelState, DTMFHandler):
         print(f"New user connected! Channel: {self.channel}")
         # Answer the call so it does not immediately hang up after entering Stasis
         await self.channel.answer()
+        # Clear LANGUAGE so Asterisk does not look in language subfolders
+        try:
+            await client.channels.setChannelVar(
+                channelId=self.channel.id,
+                variable='LANGUAGE',
+                value=''
+            )
+            print(f"LANGUAGE cleared for channel {self.channel.id}")
+        except Exception as e:
+            print(f"Failed clearing LANGUAGE for {self.channel.id}: {e}")
         await self.channel.play(media="sound:hello-world")
         player = Connection(self.channel)
         player.join_time = datetime.datetime.now()
@@ -116,7 +126,7 @@ async def playHoldMusic(channel_id):
     """Play hold music on a specific channel in a loop"""
     try:
         while True:
-            await playAudio("http://localhost:8000/hold_music.wav", channel_id)
+            await playAudio("sound:hold_music", channel_id)
             await asyncio.sleep(30)  # Play for 30 seconds, then loop
     except Exception as e:
         print(f"Hold music stopped for {channel_id}: {e}")
@@ -127,7 +137,7 @@ async def playHoldMusicForWaitingPlayers():
         # Play hold music to all connected clients
         tasks = []
         for client_conn in clients:
-            tasks.append(playAudio("http://localhost:8000/hold_music.wav", client_conn.id))
+            tasks.append(playAudio("sound:hold_music", client_conn.id))
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         await asyncio.sleep(2)  # Check every 2 seconds
