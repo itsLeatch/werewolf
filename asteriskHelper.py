@@ -191,7 +191,7 @@ async def connectPlayersPrivatly(client, listOfPlayers, nameOfBridge):
     for player in listOfPlayers:
         await client.bridges.addChannel(
             bridgeId=bridge.id,
-            channelId=player.number
+            channel=player.number
         )
     return bridge.id
 
@@ -203,7 +203,7 @@ async def connectPlayersMuted(client, listOfPlayers, nameOfBridge):
     for player in listOfPlayers:
         await client.bridges.addChannel(
             bridgeId=bridge.id,
-            channelId=player.number
+            channel=player.number
         )
         await client.channels.mute(
             channelId=player.number,
@@ -218,7 +218,7 @@ async def removePlayerFromRoom(client, player, bridgeId):
         print("Removing channel!")
         await client.bridges.removeChannel(
             bridgeId=bridgeId,
-            channelId=player.number
+            channel=player.number
         )
     except Exception:
         print("Channel already removed!")
@@ -227,7 +227,7 @@ async def removePlayerFromRoom(client, player, bridgeId):
 async def removeRoom(client, bridgeId):
     try:
         print("Removing bridge!")
-        await app.bridges.delete(bridgeId=bridgeId)
+        await client.bridges.delete(bridgeId=bridgeId)
     except Exception:
         print("Bridge already removed!")
         pass
@@ -236,7 +236,7 @@ async def routePlayerToDifferentRoom(client, player, oldBridgeId, newBridgeId):
     await removePlayerFromRoom(client, player, oldBridgeId);
     await client.bridges.addChannel(
         bridgeId=newBridgeId,
-        channelId=player.number
+        channel=player.number
     )
 
 
