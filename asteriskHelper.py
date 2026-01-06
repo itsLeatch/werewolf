@@ -1,7 +1,6 @@
 
 def playAudio(audioName):
-    #print("Trying to play an audio, but it is not working, because the function was not implemented yet")
-    print(f"Playing audio: {audioName} (not really, implement the function first)")
+    print(f"Playing audio: {audioName} (not implemented)")
 
 """players can speak together privatly to find a good method"""
 def connectPlayersPrivatly(listOfPlayers):
