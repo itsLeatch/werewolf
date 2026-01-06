@@ -141,7 +141,7 @@ def getConnectionData(playerNumber):
 
 async def playAudio(audioName, channelId):
     """Play audio on a specific channel, or broadcast if channelId is None"""
-    print(f"Playing audio: {audioName} (not implemented)")
+    print(f"Playing audio: {audioName} on channel: {channelId}")
     if channelId and client:
         await client.channels.play(channel=channelId, media=audioName)
 
